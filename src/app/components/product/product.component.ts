@@ -5,15 +5,14 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatPaginatorIntl, MatPaginatorModule, PageEvent } from '@angular/material/paginator';
-import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatTableModule } from '@angular/material/table';
 import { ActivatedRoute, Router } from '@angular/router';
-import { Observable, of, Subject, Subscription, timer } from 'rxjs';
-import { catchError, debounceTime, distinctUntilChanged, filter, mapTo, switchMap, take } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { CustomPaginatorIntl } from '../../custom-paginator-intl';
-import { Product } from '../../models/product.model';
+import { Product, PageResponse } from '../../models/product.model';
 import { ProductService } from './product.service';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner'
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { Subject, Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-product',
@@ -43,13 +42,13 @@ export class ProductComponent implements OnInit, AfterViewInit {
   searchByBarcodeForm: FormGroup;
 
   products: Product[] = [];
-
-  loading: boolean = false;
+  loading = false;
 
   currentProduct: Product | null = null;
   productToDelete: Product | null = null;
   errorMessage = '';
   successMessage = '';
+  totalPages = 0;
   totalElements = 0;
   pageSize = 8;
   currentPage = 0;
@@ -59,18 +58,14 @@ export class ProductComponent implements OnInit, AfterViewInit {
   private barcodeSubject = new Subject<string>();
   private nameSearchSubject = new Subject<string>();
   private barcodeSearchSubject = new Subject<string>();
-  private nameSearchSub!: Subscription;
-  private barcodeSearchSub!: Subscription;
 
-  currentSearchTerm: string | null = null; // per tracciare la ricerca corrente
+  currentSearchTerm: string | null = null;
 
   constructor(
     private fb: FormBuilder,
     private productService: ProductService,
-    private snackBar: MatSnackBar,
     private cdr: ChangeDetectorRef,
     private route: ActivatedRoute,
-    private router: Router
   ) {
     this.productForm = this.fb.group({ barcode: [''] });
     this.searchForm = this.fb.group({ name: [''], barcode: [''] });
@@ -79,14 +74,32 @@ export class ProductComponent implements OnInit, AfterViewInit {
 
     this.barcodeSubject.pipe(debounceTime(50), distinctUntilChanged())
       .subscribe(() => this.registerOrSellProduct());
+
+    this.nameSearchSubject.pipe(debounceTime(300), distinctUntilChanged())
+      .subscribe(name => {
+          if (name?.trim()) {
+          this.searchByName(name);
+        } else {
+          this.currentSearchTerm = null;
+          this.currentPage = 0;
+          this.loadProducts();
+        }
+      });
+
+    this.barcodeSearchSubject.pipe(debounceTime(300), distinctUntilChanged())
+      .subscribe((barcode: string) => {
+        if (barcode?.trim()) {
+          this.searchByBarcode(barcode);
+        } else {
+          this.currentSearchTerm = null;
+          this.currentPage = 0;
+          this.loadProducts();
+        }
+      });
   }
 
   ngOnInit(): void {
-    this.loading = true;
-    this.waitLoadProductsReady().subscribe(() => {
-      this.loadProducts();
-      this.loading = false;
-    });
+    this.loadProducts();
 
     this.routeSubscription = this.route.queryParams.subscribe(params => {
       this.searchForm.patchValue({ name: params['name'] || '' });
@@ -94,26 +107,7 @@ export class ProductComponent implements OnInit, AfterViewInit {
       this.loadProducts();
     });
 
-
     this.productForm.get('barcode')?.valueChanges.subscribe(value => this.barcodeSubject.next(value));
-
-    this.nameSearchSubject.pipe(debounceTime(300), distinctUntilChanged())
-      .subscribe(name => {
-        this.currentSearchTerm = name?.trim() || null;
-        this.currentPage = 0;
-        this.loadProducts();
-      });
-
-    this.barcodeSearchSubject.pipe(debounceTime(300), distinctUntilChanged())
-      .subscribe(barcode => {
-        if (barcode?.trim()) {
-          this.searchByBarcode(barcode);
-        } else {
-          this.currentSearchTerm = null;
-          this.loadProducts();
-        }
-      });
-
     this.searchForm.get('name')?.valueChanges.subscribe(value => this.nameSearchSubject.next(value));
     this.searchForm.get('barcode')?.valueChanges.subscribe(value => this.barcodeSearchSubject.next(value));
   }
@@ -125,100 +119,89 @@ export class ProductComponent implements OnInit, AfterViewInit {
     }, 0);
   }
 
-  waitLoadProductsReady(): Observable<void> {
-    return timer(4000, 2000).pipe(
-      switchMap(() =>
-        this.productService.getAllProducts(this.currentPage, this.pageSize).pipe(
-          mapTo(void 0),
-          catchError(() => of(null))
-        )
-      ),
-      filter(res => res !== null),
-      take(1)
-    );
-  }
+  /** Carica prodotti con paginazione */
+  async loadProducts(): Promise<void> {
+    this.loading = true;
+    try {
+      let response: PageResponse<Product>;
+    
+      response = await this.productService.getAllProducts(this.currentPage, this.pageSize);
 
-  loadProducts(): void {
-    const request = this.currentSearchTerm
-      ? this.productService.searchProducts(this.currentSearchTerm, this.currentPage, this.pageSize)
-      : this.productService.getAllProducts(this.currentPage, this.pageSize);
-
-    request.pipe()
-      .subscribe({
-        next: (response) => {
-          this.products = response.content;
-          this.totalElements = response.page.totalElements;
-        },
-        error: (err) => {
-          if (!(err.error instanceof ProgressEvent)) {
-            const backendMessage = err?.error;
-            this.showError(backendMessage);
-          }
-          this.products = [];
-          this.totalElements = 0;
-        }
-      });
-  }
-
-  onPageChange(event: PageEvent): void {
-    this.currentPage = event.pageIndex;
-    this.pageSize = event.pageSize;
-    this.loadProducts();
-  }
-
-  searchByBarcode(barcode: string): void {
-    this.productService.getProductByBarcode(barcode).subscribe({
-      next: (product) => {
-        this.products = [product];
-        this.totalElements = 1;
-        this.currentPage = 0;
-      },
-      error: (err) => {
-        const backendMessage = err?.error;
-        this.showError(backendMessage);
-        this.products = [];
-        this.totalElements = 0;
-      }
-    });
-  }
-
-  clearBarcodeSearch(): void {
-    this.searchForm.get('barcode')?.reset();
-    const barcodeInput = document.getElementById('searchBarcode') as HTMLInputElement;
-    barcodeInput?.focus();
-  }
-
-  private isUrl(value: string): boolean {
-    const urlPattern = /^(https?:\/\/[^\s]+)/i;
-    return urlPattern.test(value);
-  }
-
-  registerOrSellProduct(): void {
-    if (this.productForm.valid) {
-      const barcode = this.productForm.get('barcode')?.value;
-      if (this.isUrl(barcode)) {
-        this.showError('Attenzione! Hai scansionato un QR Code invece di un barcode');
-      }
-      this.productService.registerProduct(barcode).subscribe({
-        next: (product) => {
-          const productLabel = product.name ? product.name : barcode;
-          if (product.soldQuantity) {
-            this.showSuccess(`Prodotto "${productLabel}" venduto (tot. venduto ${product.soldQuantity}, 
-              tot. magazzino ${product.stockQuantity})`);
-          } else {
-            this.showSuccess(`Prodotto "${productLabel}" registrato con successo`);
-          }
-          this.productForm.reset();
-          this.loadProducts();
-        },
-        error: () => {
-          this.showError('Errore nella registrazione del prodotto');
-          setTimeout(() => this.barcodeInput?.nativeElement?.focus(), 100);
-        }
-      });
+      this.products = response.content;
+      this.totalElements = response.page.totalElements;
+      console.log(this.totalElements)
+    } catch (err) {
+      this.products = [];
+      this.totalElements = 0;
+      this.showError('Errore nel caricamento prodotti');
+    } finally {
+      this.loading = false;
     }
   }
 
+/** Ricerca prodotti per nome con paginazione */
+async searchByName(name: string): Promise<void> {
+  try {
+    // Chiamo il servizio passando nome, pagina corrente e dimensione pagina
+    const response: PageResponse<Product> = await this.productService.getProductByName(name, this.currentPage, this.pageSize);
+    console.log(response.page.totalElements)
+
+    // Aggiorno i dati della tabella
+    this.products = response.content;
+    this.totalElements = response.page.totalElements;
+    this.totalPages = response.page.totalPages;
+    this.currentPage = response.page.number;
+    // Se non ci sono risultati
+    if (this.products.length === 0) {
+      this.showError('Nessun prodotto trovato');
+    }
+  } catch (error) {
+    this.products = [];
+    this.totalElements = 0;
+    this.showError('Errore nella ricerca dei prodotti');
+  }
+}
+
+
+  /** Ricerca prodotto per barcode */
+  async searchByBarcode(barcode: string): Promise<void> {
+    try {
+      const product = await this.productService.getProductByBarcode(barcode);
+      this.products = [product];
+      this.totalElements = 1;
+      this.currentPage = 0;
+    } catch (err) {
+      this.products = [];
+      this.totalElements = 0;
+      this.showError('Prodotto non trovato');
+    }
+  }
+
+  /** Gestione cambio pagina */
+  async onPageChange(event: PageEvent) {
+    this.currentPage = event.pageIndex;
+    this.pageSize = event.pageSize;
+    await this.loadProducts();
+  }
+
+  /** Registrazione/vendita prodotto */
+  async registerOrSellProduct(): Promise<void> {
+    if (!this.productForm.valid) return;
+
+    const barcode = this.productForm.get('barcode')?.value;
+    if (!barcode) return;
+
+    try {
+      const product = await this.productService.registerOrSellProduct(barcode);
+      this.showSuccess(`Prodotto "${product.name || barcode}" registrato/venduto`);
+      this.productForm.reset();
+      await this.loadProducts();
+    } catch {
+      this.showError('Errore nella registrazione del prodotto');
+    }
+  }
+
+  /** Aggiorna prodotto */
   editProduct(product: Product): void {
     this.currentProduct = product;
     this.editForm.patchValue({
@@ -228,94 +211,70 @@ export class ProductComponent implements OnInit, AfterViewInit {
     });
   }
 
-  updateProduct(): void {
-    if (this.editForm.valid && this.currentProduct) {
-      const priceRaw = this.editForm.get('price')?.value ?? '';
-      const priceValue = this.editForm.get('price')?.value ?? 0;
-      const updatedProduct = {
-        ...this.currentProduct,
-        ...this.editForm.value,
-        price: Number(priceValue)
-      };
-      this.productService.updateProduct(updatedProduct).subscribe({
-        next: () => {
-          this.showSuccess('Prodotto aggiornato con successo');
-          this.currentProduct = null;
-          this.loadProducts();
+  async updateProduct(): Promise<void> {
+    if (!this.editForm.valid || !this.currentProduct) return;
 
-        },
-        error: (err) => {
-          const backendMessage = err?.error;
-          this.showError(backendMessage);
-          this.currentProduct = null;
-        }
-      });
-      const barcode = document.getElementById('barcode') as HTMLInputElement;
-      barcode.focus();
+    const updatedProduct: Product = {
+      ...this.currentProduct,
+      ...this.editForm.value,
+      price: Number(this.editForm.get('price')?.value ?? 0)
+    };
+
+    try {
+      await this.productService.updateProduct(updatedProduct);
+      this.showSuccess('Prodotto aggiornato con successo');
+      this.currentProduct = null;
+      await this.loadProducts();
+    } catch {
+      this.showError('Errore durante l\'aggiornamento del prodotto');
     }
   }
 
-  decreaseQuantity(product: Product): void {
-    this.productService.decreaseQuantity(product.barcode).subscribe({
-      next: () => {
-        this.showSuccess('Quantità diminuita con successo')
-        this.loadProducts();
-      },
-      error: (err) => {
-        const backendMessage = err?.error;
-        this.showError(backendMessage);
-      }
-    });
+  /** Decrementa quantità venduta */
+  async decreaseQuantity(product: Product): Promise<void> {
+    try {
+      await this.productService.decreaseQuantity(product.barcode);
+      this.showSuccess('Quantità diminuita con successo');
+      await this.loadProducts();
+    } catch {
+      this.showError('Errore durante la diminuzione della quantità');
+    }
   }
 
+  /** Eliminazione prodotto */
   deleteProduct(product: Product): void {
     this.productToDelete = product;
   }
 
-  confirmDeleteProduct(): void {
-    this.productService.deleteProduct(this.productToDelete!.barcode).subscribe({
-      next: () => {
-        this.showSuccess('Prodotto eliminato con successo');
-        this.products = this.products.filter(p => p.barcode !== this.productToDelete!.barcode);
-        this.totalElements--;
-        if (this.products.length === 0 && this.currentPage > 0) this.currentPage--;
-        this.productToDelete = null;
-        this.loadProducts();
-      },
-      error: () => this.showError('Errore nell\'eliminazione del prodotto')
-    });
+  async confirmDeleteProduct(): Promise<void> {
+    if (!this.productToDelete) return;
+
+    try {
+      await this.productService.deleteProduct(this.productToDelete.barcode);
+      this.showSuccess('Prodotto eliminato con successo');
+      this.productToDelete = null;
+      await this.loadProducts();
+    } catch {
+      this.showError('Errore nell\'eliminazione del prodotto');
+    }
   }
 
-  private errorTimeout: any;
-  private successTimeout: any;
+  clearBarcodeSearch(): void { 
+    this.searchForm.get('barcode')?.reset(); 
+    const barcodeInput = document.getElementById('searchBarcode') as HTMLInputElement; 
+    barcodeInput?.focus();
+   }
 
+  /** Messaggi UI */
   private showError(message: string): void {
     this.errorMessage = message;
-
-    if (this.errorTimeout) {
-      clearTimeout(this.errorTimeout);
-    }
-
-    this.errorTimeout = setTimeout(() => {
-      this.errorMessage = '';
-      this.cdr.markForCheck();
-    }, 8000);
-
+    setTimeout(() => this.errorMessage = '', 8000);
     this.cdr.markForCheck();
   }
 
   private showSuccess(message: string): void {
     this.successMessage = message;
-
-    if (this.successTimeout) {
-      clearTimeout(this.successTimeout);
-    }
-
-    this.successTimeout = setTimeout(() => {
-      this.successMessage = '';
-      this.cdr.markForCheck();
-    }, 8000);
-
+    setTimeout(() => this.successMessage = '', 8000);
     this.cdr.markForCheck();
   }
 }

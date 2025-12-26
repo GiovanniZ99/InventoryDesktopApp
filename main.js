@@ -1,278 +1,94 @@
-const { app, BrowserWindow } = require('electron');
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const net = require('net');
-const { MongoClient } = require('mongodb');
+import { app, BrowserWindow, ipcMain } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import productService from './backend/service/ProductService.js';
+import { initDb } from './backend/configuration/Db.js';
 
-// === Percorsi base ===
-const isPackaged = app.isPackaged;
-const basePath = isPackaged ? process.resourcesPath : path.join(__dirname);
+// __dirname in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const mongodBin = path.join(basePath, 'mongodb', 'bin', 'mongod.exe');
-const dataPath = path.join(basePath, 'mongodb', 'data');
-const mongoLogPath = path.join(app.getPath('userData'), 'mongod.log');
-const javaExecutable = path.join(basePath, 'jdk-21.0.8+9-jre', 'bin', 'java.exe');
-const backendJar = path.join(basePath, 'backend', 'warehouse.jar');
+let mainWindow;
 
-let mongoProcess = null;
-let javaProcess = null;
-let servicesReady = { mongo: false, backend: false };
-
-// === Timeout e retry ===
-const STARTUP_TIMEOUT = 15000; 
-const CONNECTION_RETRY_DELAY = 1000; 
-
-function isPortInUse(port) {
-  return new Promise((resolve) => {
-    const tester = net.createServer()
-      .once('error', () => resolve(true))
-      .once('listening', function () {
-        tester.once('close', () => resolve(false)).close();
-      })
-      .listen(port);
-  });
-}
-
-// === Attesa che MongoDB risponda ===
-function waitForMongoReady() {
-  return new Promise((resolve) => {
-    const tryConnect = async () => {
-      const url = 'mongodb://localhost:27017';
-      const client = new MongoClient(url, {
-        serverSelectionTimeoutMS: 2000,
-        connectTimeoutMS: 2000
-      });
-
-      try {
-        await client.connect();
-        await client.db("admin").command({ ping: 1 });
-        client.close();
-        console.log('MongoDB pronto');
-        resolve();
-      } catch (err) {
-        console.log(`MongoDB non ancora pronto: ${err.message}`);
-        client.close();
-        setTimeout(tryConnect, CONNECTION_RETRY_DELAY);
-      }
-    };
-    tryConnect();
-  });
-}
-
-// === Avvio MongoDB sequenziale ===
-async function startMongoDB() {
-  if (await isPortInUse(27017)) {
-    console.log('MongoDB già in esecuzione');
-    servicesReady.mongo = true;
-    return;
-  }
-
-  fs.mkdirSync(dataPath, { recursive: true });
-  fs.mkdirSync(path.dirname(mongoLogPath), { recursive: true });
-
-  const mongoArgs = [
-    '--dbpath', dataPath,
-    '--port', '27017',
-    '--logpath', mongoLogPath,
-    '--quiet'
-  ];
-
-  console.log('Avvio MongoDB...');
-  mongoProcess = spawn(mongodBin, mongoArgs);
-
-  mongoProcess.stdout.on('data', data => {
-    console.log(`[MongoDB] ${data}`);
-  });
-
-  mongoProcess.stderr.on('data', data => {
-    console.error(`[MongoDB ERR] ${data}`);
-  });
-
-  mongoProcess.on('error', err => {
-    console.error('Errore MongoDB:', err);
-  });
-
-  await waitForMongoReady();
-  servicesReady.mongo = true;
-}
-
-// === Avvio Backend ===
-async function startBackend() {
-  if (await isPortInUse(8080)) {
-    console.log('Backend già in esecuzione');
-    servicesReady.backend = true;
-    return;
-  }
-
-  console.log('Avvio Backend Java...');
-  
-  const javaArgs = [
-    '-Xms256m',
-    '-Xmx512m',
-    '-XX:+UseG1GC',
-    '-XX:+UseStringDeduplication',
-    '-Dspring.profiles.active=prod',
-    '-Dserver.port=8080',
-    '-jar', backendJar
-  ];
-
-  javaProcess = spawn(javaExecutable, javaArgs, {
-    cwd: path.dirname(backendJar)
-  });
-
-  return new Promise((resolve) => {
-    javaProcess.stdout.on('data', data => {
-      const output = data.toString();
-      console.log(`[Backend] ${output}`);
-      if (output.includes('Started WarehouseApplication')) {
-        console.log('Backend pronto');
-        servicesReady.backend = true;
-        resolve();
-      }
-    });
-
-    javaProcess.stderr.on('data', data => {
-      console.error(`[Backend ERR] ${data}`);
-    });
-
-    javaProcess.on('error', err => {
-      console.error('Errore Backend:', err);
-    });
-  });
-}
-
-// === Avvio sequenziale dei servizi ===
-async function startServices() {
-  console.log('Avvio servizi in sequenza...');
-  try {
-    await startMongoDB();
-    await startBackend();
-    console.log('Tutti i servizi pronti!');
-    createWindow();
-  } catch (err) {
-    console.error('Errore durante avvio servizi:', err);
-    createWindow(); 
-  }
-
-  setTimeout(() => {
-    if (!servicesReady.mongo || !servicesReady.backend) {
-      console.log('Timeout avvio servizi, creo finestra comunque...');
-      createWindow();
-    }
-  }, STARTUP_TIMEOUT);
-}
-
-function getAssetPath(...paths) {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'frontend', 'assets', ...paths);
-  } else {
-    return path.join(__dirname, 'assets', ...paths);
-  }
-}
-
-// === Crea finestra principale ===
-function createWindow() {
-  const win = new BrowserWindow({
+async function createWindow() {
+  mainWindow = new BrowserWindow({
     width: 1000,
     height: 800,
-    icon: getAssetPath('barcode.ico'),
     show: false,
+    icon: path.join(__dirname, 'assets', 'barcode.ico'),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: true,
-      backgroundThrottling: false
+      preload: path.join(__dirname, 'preload.js')
     }
   });
 
-  win.once('ready-to-show', () => {
-    win.show();
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
     console.log('Applicazione pronta!');
   });
 
-  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self';",
-          "script-src 'self' 'unsafe-inline';",
-          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
-          "font-src 'self' https://fonts.gstatic.com;",
-          "img-src 'self' data:;",
-          "connect-src 'self' http://localhost:8080;"
-        ].join(' ')
-      }
-    });
-  });
-
-  if (isPackaged) {
-    const frontendPath = path.join(basePath, 'frontend', 'index.html');
-    win.loadFile(frontendPath);
+  if (app.isPackaged) {
+    mainWindow.loadFile(
+      path.join(process.resourcesPath, 'frontend', 'index.html')
+    );
   } else {
-    win.loadURL('http://localhost:4200');
+    mainWindow.loadURL('http://localhost:4200');
   }
 }
 
-// === Chiusura ordinata processi ===
-function waitForProcessClose(proc, name, timeout = 3000) {
-  return new Promise((resolve) => {
-    if (!proc) {
-      resolve();
-      return;
-    }
-
-    let finished = false;
-
-    proc.on('close', (code, signal) => {
-      if (!finished) {
-        finished = true;
-        console.log(`${name} terminato con codice ${code}, segnale ${signal}`);
-        resolve();
-      }
-    });
-
-    setTimeout(() => {
-      if (!finished) {
-        console.warn(`${name} non risponde, forzo kill...`);
-        proc.kill('SIGKILL');
-        resolve();
-      }
-    }, timeout);
-  });
-}
-
-app.on('window-all-closed', async () => {
-  console.log('Chiusura finestre: arresto servizi...');
-
-  if (javaProcess) {
-    javaProcess.kill('SIGTERM');
-    await waitForProcessClose(javaProcess, 'Backend Java');
-  }
-
-  if (mongoProcess) {
+// Funzione helper per async IPC handlers
+function asyncHandler(fn) {
+  return async (...args) => {
     try {
-      console.log('Arresto MongoDB...');
-      mongoProcess.kill('SIGTERM');
-      await waitForProcessClose(mongoProcess, 'MongoDB');
-      console.log('MongoDB arrestato.');
+      return await fn(...args);
     } catch (err) {
-      console.error('Errore durante l\'arresto di MongoDB:', err.message);
-      mongoProcess.kill('SIGKILL');
-      await waitForProcessClose(mongoProcess, 'MongoDB');
+      console.error('Errore IPC:', err);
+      throw err;
     }
-  }
+  };
+}
 
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+// IPC handlers
+
+ipcMain.handle('register-or-sell-product', asyncHandler((_, barcode) =>
+  productService.registerOrSellProduct(barcode)  
+));
+
+ipcMain.handle('get-all-products', asyncHandler((_, page, size) =>
+  productService.getAllProducts(page, size)
+));
+
+ipcMain.handle('get-product-by-name', asyncHandler((_, name, page, size) =>
+  productService.getProductByName(name, page, size) 
+));
+
+ipcMain.handle('get-product-by-barcode', asyncHandler((_, barcode) =>
+  productService.getProductByBarcode(barcode)
+));
+
+
+ipcMain.handle('update-product', asyncHandler((_, product) =>
+  productService.addNamePriceStockQuantityProduct(product)
+));
+
+ipcMain.handle('decrease-quantity', asyncHandler((_, barcode) =>
+  productService.decreaseQuantity(barcode)
+));
+
+ipcMain.handle('delete-product', asyncHandler((_, barcode) =>
+  productService.deleteProduct(barcode)  
+));
+
+
+// App lifecycle
+app.whenReady().then(async () => {
+  // Inizializza database e crea tabelle se non esistono
+  await initDb();
+
+  await createWindow();
 });
 
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
 });
-
-app.whenReady().then(startServices);
