@@ -1,0 +1,117 @@
+{
+  "name": "my-storage",
+  "version": "2.0.0",
+  "description": "Storage Management Application",
+  "author": "Giovanni",
+  "main": "main.js",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "build": "ng build --configuration production",
+    "build:dev": "ng build --configuration development",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test",
+    "electron": "ng build --configuration production && electron .",
+    "electron-build": "ng build --configuration production && electron-builder",
+    "build-all": "ng build --configuration production && electron-builder",
+    "build:optimized": "ng build --configuration production && electron-builder --config.compression=maximum",
+    "cleanup": "node cleanup.js",
+    "build:clean": "npm run cleanup && npm run build:optimized"
+  },
+  "build": {
+    "appId": "com.storage.app",
+    "productName": "MyStorage",
+    "icon": "assets/barcode.ico",
+    "directories": {
+      "output": "dist_electron"
+    },
+    "files": [
+      "main.js",
+      "dist/my-storage-frontend/browser/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/my-storage-frontend/browser",
+        "to": "frontend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "jdk-21.0.8+9-jre",
+        "to": "jdk-21.0.8+9-jre",
+        "filter": [
+          "bin/**/*",
+          "lib/**/*",
+          "conf/**/*"
+        ]
+      },
+      {
+        "from": "backend/warehouse/target/warehouse-0.0.1-SNAPSHOT.jar",
+        "to": "backend/warehouse.jar"
+      },
+      {
+        "from": "mongodb",
+        "to": "mongodb",
+        "filter": [
+          "bin/mongod.exe",
+          "bin/mongo.exe",
+          "bin/mongosh.exe",
+          "bin/bsondump.exe",
+          "bin/mongodump.exe",
+          "bin/mongoexport.exe",
+          "bin/mongofiles.exe",
+          "bin/mongoimport.exe",
+          "bin/mongorestore.exe",
+          "bin/mongostat.exe",
+          "bin/mongotop.exe"
+        ]
+      }
+    ],
+    "win": {
+      "target": "zip",
+      "compression": "maximum"
+    },
+    "compression": "maximum",
+    "removePackageScripts": true,
+    "removePackageKeywords": true
+  },
+  "private": true,
+  "dependencies": {
+    "@angular/animations": "^20.0.2",
+    "@angular/cdk": "^20.0.2",
+    "@angular/common": "^20.0.2",
+    "@angular/compiler": "^20.0.2",
+    "@angular/core": "^20.0.2",
+    "@angular/forms": "^20.0.2",
+    "@angular/material": "^20.0.2",
+    "@angular/platform-browser": "^20.0.2",
+    "@angular/platform-browser-dynamic": "^20.0.2",
+    "@angular/router": "^20.0.2",
+    "electron-packager": "^17.1.2",
+    "mongodb": "^6.16.0",
+    "mongodb-download": "^2.0.0",
+    "node-fetch": "^3.3.2",
+    "rxjs": "~7.8.0",
+    "tree-kill": "^1.2.2",
+    "tslib": "^2.3.0",
+    "zone.js": "~0.15.0"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^20.0.1",
+    "@angular/cli": "^20.0.1",
+    "@angular/compiler-cli": "^20.0.2",
+    "@types/jasmine": "~5.1.0",
+    "bootstrap": "^5.3.5",
+    "electron": "^36.2.0",
+    "electron-builder": "^26.0.12",
+    "jasmine-core": "~5.6.0",
+    "karma": "~6.4.0",
+    "karma-chrome-launcher": "~3.2.0",
+    "karma-coverage": "~2.2.0",
+    "karma-jasmine": "~5.1.0",
+    "karma-jasmine-html-reporter": "~2.1.0",
+    "typescript": "~5.8.3"
+  },
+  "packageManager": "npm@11.3.0+sha512.96eb611483f49c55f7fa74df61b588de9e213f80a256728e6798ddc67176c7b07e4a1cfc7de8922422cbce02543714367037536955221fa451b0c4fefaf20c66"
+}
