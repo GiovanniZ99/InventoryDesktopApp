@@ -11,7 +11,6 @@ import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { CustomPaginatorIntl } from '../../custom-paginator-intl';
 import { Product, PageResponse } from '../../models/product.model';
 import { ProductService } from './product.service';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { Subject, Subscription } from 'rxjs';
 
 @Component({
@@ -27,7 +26,6 @@ import { Subject, Subscription } from 'rxjs';
     MatInputModule,
     MatButtonModule,
     MatIconModule,
-    MatProgressSpinnerModule
   ],
   providers: [
     { provide: MatPaginatorIntl, useClass: CustomPaginatorIntl }
@@ -42,7 +40,6 @@ export class ProductComponent implements OnInit, AfterViewInit {
   searchByBarcodeForm: FormGroup;
 
   products: Product[] = [];
-  loading = false;
 
   currentProduct: Product | null = null;
   productToDelete: Product | null = null;
@@ -121,7 +118,6 @@ export class ProductComponent implements OnInit, AfterViewInit {
 
   /** Carica prodotti con paginazione */
   async loadProducts(): Promise<void> {
-    this.loading = true;
     try {
       let response: PageResponse<Product>;
     
@@ -134,8 +130,6 @@ export class ProductComponent implements OnInit, AfterViewInit {
       this.products = [];
       this.totalElements = 0;
       this.showError('Errore nel caricamento prodotti');
-    } finally {
-      this.loading = false;
     }
   }
 
@@ -151,14 +145,10 @@ async searchByName(name: string): Promise<void> {
     this.totalElements = response.page.totalElements;
     this.totalPages = response.page.totalPages;
     this.currentPage = response.page.number;
-    // Se non ci sono risultati
-    if (this.products.length === 0) {
-      this.showError('Nessun prodotto trovato');
-    }
   } catch (error) {
     this.products = [];
     this.totalElements = 0;
-    this.showError('Errore nella ricerca dei prodotti');
+    this.showError('Prodotto non trovato');
   }
 }
 
@@ -193,7 +183,7 @@ async searchByName(name: string): Promise<void> {
 
     try {
       const product = await this.productService.registerOrSellProduct(barcode);
-      this.showSuccess(`Prodotto "${product.name || barcode}" registrato/venduto`);
+      this.showSuccess(`Prodotto "${product.name || barcode}" scansionato con successo!`);
       this.productForm.reset();
       await this.loadProducts();
     } catch {
@@ -222,7 +212,7 @@ async searchByName(name: string): Promise<void> {
 
     try {
       await this.productService.updateProduct(updatedProduct);
-      this.showSuccess('Prodotto aggiornato con successo');
+      this.showSuccess('Prodotto aggiornato con successo!');
       this.currentProduct = null;
       await this.loadProducts();
     } catch {
@@ -232,9 +222,13 @@ async searchByName(name: string): Promise<void> {
 
   /** Decrementa quantità venduta */
   async decreaseQuantity(product: Product): Promise<void> {
+    if(product.soldQuantity === 0){
+      this.showError('La quantità venduta non può essere negativa!')
+      return
+    }
     try {
       await this.productService.decreaseQuantity(product.barcode);
-      this.showSuccess('Quantità diminuita con successo');
+      this.showSuccess('Quantità diminuita con successo!');
       await this.loadProducts();
     } catch {
       this.showError('Errore durante la diminuzione della quantità');
@@ -251,7 +245,7 @@ async searchByName(name: string): Promise<void> {
 
     try {
       await this.productService.deleteProduct(this.productToDelete.barcode);
-      this.showSuccess('Prodotto eliminato con successo');
+      this.showSuccess('Prodotto eliminato con successo!');
       this.productToDelete = null;
       await this.loadProducts();
     } catch {
@@ -268,13 +262,13 @@ async searchByName(name: string): Promise<void> {
   /** Messaggi UI */
   private showError(message: string): void {
     this.errorMessage = message;
-    setTimeout(() => this.errorMessage = '', 8000);
+    setTimeout(() => this.errorMessage = '', 5000);
     this.cdr.markForCheck();
   }
 
   private showSuccess(message: string): void {
     this.successMessage = message;
-    setTimeout(() => this.successMessage = '', 8000);
+    setTimeout(() => this.successMessage = '', 5000);
     this.cdr.markForCheck();
   }
 }

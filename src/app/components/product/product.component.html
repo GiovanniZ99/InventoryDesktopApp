@@ -1,44 +1,39 @@
 <div class="container">
 
-  <div class="navbar">
-    <div class="title">
-      <h1>Gestione Inventario</h1>
-    </div>
+  <div class="fields">
+    <!-- Form per registrare il prodotto tramite barcode -->
+    <form [formGroup]="productForm" (ngSubmit)="registerOrSellProduct()">
+      <div class="form-field">
+        <input type="text" id="barcode" formControlName="barcode" placeholder="Scansiona un prodotto" />
+        <label for="barcode"></label>
+      </div>
+    </form>
+
+    <!-- Form di ricerca unificato -->
+    <form [formGroup]="searchForm">
+      <!-- Campo per nome -->
+      <div class="form-field">
+        <input type="text" id="searchName" formControlName="name" placeholder="Cerca un prodotto per nome" />
+        <label for="searchName"></label>
+        <button type="button" class="search-button">
+          <mat-icon>search</mat-icon>
+        </button>
+      </div>
+
+      <!-- Campo per barcode -->
+      <div class="form-field">
+        <input type="text" id="searchBarcode" formControlName="barcode" placeholder="Cerca un prodotto per barcode" />
+        <label for="searchBarcode"></label>
+
+        <button type="button" class="search-button">
+          <mat-icon>search</mat-icon>
+        </button>
+        <button type="button" class="clear-button" (click)="clearBarcodeSearch()">
+          <img src="assets/eraser.png" alt="Cancella">
+        </button>
+      </div>
+    </form>
   </div>
-
-  <!-- Form per registrare il prodotto tramite barcode -->
-  <form [formGroup]="productForm" (ngSubmit)="registerOrSellProduct()">
-    <div class="form-field">
-      <input type="text" id="barcode" formControlName="barcode" required #barcodeInput />
-      <label for="barcode">Scansiona un prodotto</label>
-    </div>
-  </form>
-
-  <!-- Form di ricerca unificato -->
-  <form [formGroup]="searchForm">
-    <!-- Campo per nome -->
-    <div class="form-field">
-      <input type="text" id="searchName" formControlName="name" required />
-      <label for="searchName">Cerca un prodotto per nome</label>
-      <button type="button" class="search-button">
-        <mat-icon>search</mat-icon>
-      </button>
-    </div>
-
-    <!-- Campo per barcode -->
-    <div class="form-field">
-      <input type="text" id="searchBarcode" formControlName="barcode" required />
-      <label for="searchBarcode">Cerca un prodotto per barcode</label>
-
-      <button type="button" class="search-button">
-        <mat-icon>search</mat-icon>
-      </button>
-      <button type="button" class="clear-button" (click)="clearBarcodeSearch()">
-        <img src="assets/eraser.png" alt="Cancella">
-      </button>
-    </div>
-  </form>
-
   <!-- Messaggi di errore e successo -->
   @if (errorMessage) {
   <div class="error-message">
@@ -48,11 +43,6 @@
   @if (successMessage) {
   <div class="success-message">
     {{ successMessage }}
-  </div>
-  }
-  @if (loading) {
-  <div class="spinner-container">
-    <mat-progress-spinner mode="indeterminate" diameter="110"></mat-progress-spinner>
   </div>
   }
 
@@ -93,13 +83,13 @@
     <ng-container matColumnDef="actions">
       <th mat-header-cell *matHeaderCellDef></th>
       <td mat-cell *matCellDef="let product">
-        <button mat-icon-button color="primary" (click)="editProduct(product)">
+        <button mat-icon-button (click)="editProduct(product)">
           <mat-icon>edit</mat-icon>
         </button>
-        <button mat-icon-button color="warn" (click)="decreaseQuantity(product)">
+        <button mat-icon-button (click)="decreaseQuantity(product)">
           <mat-icon>remove_circle</mat-icon>
         </button>
-        <button mat-icon-button color="warn" (click)="deleteProduct(product)">
+        <button mat-icon-button (click)="deleteProduct(product)">
           <mat-icon>delete</mat-icon>
         </button>
       </td>
@@ -110,36 +100,37 @@
   </table>
 
   <!-- Paginazione -->
-  <mat-paginator [length]="totalElements" [pageSize]="pageSize" [pageIndex]="currentPage"
-    [pageSizeOptions]="[5, 7, 8, 10]" (page)="onPageChange($event)">>
-  </mat-paginator>
+  <div class="paginator-wrapper">
+    <mat-paginator [length]="totalElements" [pageSize]="pageSize" [pageIndex]="currentPage"
+      [pageSizeOptions]="[5, 7, 8, 10]" (page)="onPageChange($event)">>
+    </mat-paginator>
+  </div>
 </div>
-
 <!-- Dialog di modifica -->
 @if (currentProduct) {
 <div class="dialog">
   <div class="modal-title">
-    <h1 style="font-size: 35px; color:black ; margin: 0; margin-bottom: 10px">Modifica Prodotto</h1>
+    <h1 style="font-size: 35px; color:black; margin: 0; margin-bottom: 10px">Modifica Prodotto</h1>
   </div>
   <div class="dialog-content">
     <form [formGroup]="editForm" (ngSubmit)="updateProduct()">
       <div class="form-field">
         <input formControlName="name" placeholder="Inserisci il nome del prodotto">
-        <label style="background-color: white;">Nome</label>
+        <label for="name"></label>
       </div>
 
-      <div class="form-field">
-        <input matInput type="number" formControlName="stockQuantity">
-        <label style="background-color: white;">Quantità In Magazzino</label>
-      </div>
+      <mat-form-field appearance="outline" class="fixed-label" floatLabel="always">
+        <mat-label style="border-radius: 12px;">Quantità in magazzino</mat-label>
+        <input matInput type="number" formControlName="stockQuantity" />
+      </mat-form-field>
 
-      <div class="form-field" style="margin-bottom: 0%;">
-        <input matInput type="number" step="0.01" formControlName="price">
-        <label style="background-color: white;">Prezzo</label>
-      </div>
+      <mat-form-field appearance="outline" class="fixed-label" floatLabel="always">
+        <mat-label>Prezzo</mat-label>
+        <input matInput type="number" step="0.1" formControlName="price" />
+      </mat-form-field>
 
       <div class="dialog-actions">
-        <button mat-button type="button" (click)="currentProduct = null">Annulla</button>
+        <button mat-button class="cancel-button" type="button" (click)="currentProduct = null">Annulla</button>
         <button mat-raised-button class="submit-button" type="submit" [disabled]="!editForm.valid">
           Salva
         </button>
@@ -149,19 +140,20 @@
 </div>
 }
 
+<!-- Dialog di eliminazione -->
 @if (productToDelete) {
 <div class="dialog" style="width: fit-content;">
   <div class="modal-title">
     <h1 style="font-size: 35px; color:black ; margin: 0; margin-bottom: 10px">Elimina Prodotto</h1>
   </div>
   <div class="dialog-content">
-    <div style="margin-bottom: 10%;">
+    <div style="margin-bottom: 10%; padding-left: 2px;">
       <span>Sei sicuro di voler eliminare il prodotto selezionato?</span>
     </div>
 
     <div class="dialog-actions">
-      <button mat-button type="button" (click)="productToDelete = null">Annulla</button>
-      <button mat-raised-button class="submit-button" type="submit" (click)="confirmDeleteProduct()">
+      <button mat-button class="cancel-button" type="button" (click)="productToDelete = null">Annulla</button>
+      <button mat-raised-button class="delete-button" type="submit" (click)="confirmDeleteProduct()">
         Conferma
       </button>
     </div>
