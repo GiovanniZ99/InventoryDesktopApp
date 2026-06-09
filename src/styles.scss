@@ -1,7 +1,23 @@
 @import '@angular/material/prebuilt-themes/indigo-pink.css';
-@import url('https://fonts.googleapis.com/icon?family=Material+Icons');
 
 /* Global styles */
+
+@font-face {
+  font-family: 'Material Icons';
+  src: url('assets/fonts/MaterialIcons-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  display: inline-block;
+  line-height: 1;
+}
 
 .background-container {
   min-height: 100vh; 

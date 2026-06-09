@@ -94,7 +94,7 @@
     "node-fetch": "^3.3.2",
     "rxjs": "~7.8.0",
     "sequelize": "^6.37.7",
-    "sqlite3": "^5.1.7",
+    "sql.js": "^1.14.1",
     "tree-kill": "^1.2.2",
     "tslib": "^2.3.0",
     "zone.js": "~0.15.0"
